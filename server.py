@@ -12,6 +12,7 @@ YDL_SEARCH_OPTS = {
     "extract_flat": "in_playlist",
     "skip_download": True,
     "default_search": "ytsearch",
+    "extractor_args": {"youtube": {"player_client": ["android"]}},
 }
 
 YDL_STREAM_OPTS = {
@@ -20,6 +21,7 @@ YDL_STREAM_OPTS = {
     "format": "bestaudio/best",
     "skip_download": True,
     "noplaylist": True,
+    "extractor_args": {"youtube": {"player_client": ["android"]}},
 }
 
 
