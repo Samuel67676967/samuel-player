@@ -6,16 +6,11 @@ import yt_dlp
 app = Flask(__name__)
 CORS(app)  # allow the PWA (hosted on a different origin) to call this API
 
-COOKIE_FILE = os.path.join(os.path.dirname(__file__), "cookies.txt")
-_cookie_opts = {"cookiefile": COOKIE_FILE} if os.path.exists(COOKIE_FILE) else {}
-
 YDL_SEARCH_OPTS = {
     "quiet": True,
     "no_warnings": True,
     "extract_flat": "in_playlist",
     "skip_download": True,
-    "default_search": "ytsearch",
-    **_cookie_opts,
 }
 
 YDL_STREAM_OPTS = {
@@ -23,8 +18,6 @@ YDL_STREAM_OPTS = {
     "no_warnings": True,
     "skip_download": True,
     "noplaylist": True,
-    "extractor_args": {"youtube": {"player_client": ["tv"]}},
-    **_cookie_opts,
 }
 
 
@@ -40,14 +33,17 @@ def search():
         return jsonify([])
 
     with yt_dlp.YoutubeDL(YDL_SEARCH_OPTS) as ydl:
-        info = ydl.extract_info(f"ytsearch8:{q}", download=False)
+        info = ydl.extract_info(f"scsearch8:{q}", download=False)
 
     results = []
     for entry in info.get("entries", []):
         if not entry:
             continue
+        track_url = entry.get("url") or entry.get("webpage_url")
+        if not track_url:
+            continue
         results.append({
-            "id": entry.get("id"),
+            "id": track_url,
             "title": entry.get("title"),
             "artist": entry.get("uploader") or entry.get("channel"),
             "duration": entry.get("duration"),
@@ -55,41 +51,28 @@ def search():
     return jsonify(results)
 
 
-@app.get("/stream/<video_id>")
-def stream(video_id):
-    url = f"https://www.youtube.com/watch?v={video_id}"
+@app.get("/stream/<path:track_url>")
+def stream(track_url):
     with yt_dlp.YoutubeDL(YDL_STREAM_OPTS) as ydl:
-        info = ydl.extract_info(url, download=False)
+        info = ydl.extract_info(track_url, download=False)
 
     formats = info.get("formats", []) or []
 
     def has_audio(f):
         return f.get("acodec") and f.get("acodec") != "none"
 
-    def has_video(f):
-        return f.get("vcodec") and f.get("vcodec") != "none"
-
-    # Prefer audio-only formats (smallest download, exactly what we need).
-    audio_only = [f for f in formats if has_audio(f) and not has_video(f)]
-    # Fall back to combined audio+video formats.
-    combined = [f for f in formats if has_audio(f) and has_video(f)]
-
     def bitrate(f):
         return f.get("abr") or f.get("tbr") or 0
 
-    chosen = None
-    if audio_only:
-        chosen = max(audio_only, key=bitrate)
-    elif combined:
-        chosen = max(combined, key=bitrate)
-    elif info.get("url"):
-        chosen = info
+    audio_formats = [f for f in formats if has_audio(f)]
+    chosen = max(audio_formats, key=bitrate) if audio_formats else None
+    stream_url = chosen.get("url") if chosen else info.get("url")
 
-    if not chosen or not chosen.get("url"):
-        return jsonify({"error": "could not resolve stream", "available_formats": len(formats)}), 404
+    if not stream_url:
+        return jsonify({"error": "could not resolve stream"}), 404
 
     return jsonify({
-        "url": chosen.get("url"),
+        "url": stream_url,
         "title": info.get("title"),
         "artist": info.get("uploader"),
     })
