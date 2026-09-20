@@ -21,7 +21,6 @@ YDL_SEARCH_OPTS = {
 YDL_STREAM_OPTS = {
     "quiet": True,
     "no_warnings": True,
-    "format": "bestaudio/best",
     "skip_download": True,
     "noplaylist": True,
     **_cookie_opts,
@@ -61,19 +60,35 @@ def stream(video_id):
     with yt_dlp.YoutubeDL(YDL_STREAM_OPTS) as ydl:
         info = ydl.extract_info(url, download=False)
 
-    stream_url = info.get("url")
-    if not stream_url:
-        # fall back to the best audio-only format explicitly, if present
-        for fmt in info.get("formats", []):
-            if fmt.get("acodec") != "none" and fmt.get("vcodec") == "none":
-                stream_url = fmt.get("url")
-                break
+    formats = info.get("formats", []) or []
 
-    if not stream_url:
-        return jsonify({"error": "could not resolve stream"}), 404
+    def has_audio(f):
+        return f.get("acodec") and f.get("acodec") != "none"
+
+    def has_video(f):
+        return f.get("vcodec") and f.get("vcodec") != "none"
+
+    # Prefer audio-only formats (smallest download, exactly what we need).
+    audio_only = [f for f in formats if has_audio(f) and not has_video(f)]
+    # Fall back to combined audio+video formats.
+    combined = [f for f in formats if has_audio(f) and has_video(f)]
+
+    def bitrate(f):
+        return f.get("abr") or f.get("tbr") or 0
+
+    chosen = None
+    if audio_only:
+        chosen = max(audio_only, key=bitrate)
+    elif combined:
+        chosen = max(combined, key=bitrate)
+    elif info.get("url"):
+        chosen = info
+
+    if not chosen or not chosen.get("url"):
+        return jsonify({"error": "could not resolve stream", "available_formats": len(formats)}), 404
 
     return jsonify({
-        "url": stream_url,
+        "url": chosen.get("url"),
         "title": info.get("title"),
         "artist": info.get("uploader"),
     })
