@@ -1,10 +1,15 @@
 import os
-from flask import Flask, request, jsonify
+import tempfile
+import glob
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import yt_dlp
+import imageio_ffmpeg
 
 app = Flask(__name__)
 CORS(app)  # allow the PWA (hosted on a different origin) to call this API
+
+FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 
 YDL_SEARCH_OPTS = {
     "quiet": True,
@@ -47,6 +52,7 @@ def search():
             "title": entry.get("title"),
             "artist": entry.get("uploader") or entry.get("channel"),
             "duration": entry.get("duration"),
+            "artwork": entry.get("thumbnail") or entry.get("artwork_url"),
         })
     return jsonify(results)
 
@@ -75,7 +81,44 @@ def stream(track_url):
         "url": stream_url,
         "title": info.get("title"),
         "artist": info.get("uploader"),
+        "artwork": info.get("thumbnail"),
     })
+
+
+@app.get("/download/<path:track_url>")
+def download(track_url):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_template = os.path.join(tmpdir, "%(id)s.%(ext)s")
+        opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "format": "bestaudio/best",
+            "outtmpl": out_template,
+            "ffmpeg_location": FFMPEG_PATH,
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }],
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(track_url, download=True)
+
+        title = info.get("title", "track")
+        artist = info.get("uploader", "")
+
+        mp3_files = glob.glob(os.path.join(tmpdir, "*.mp3"))
+        if not mp3_files:
+            return jsonify({"error": "conversion failed"}), 500
+
+        with open(mp3_files[0], "rb") as f:
+            audio_bytes = f.read()
+
+    resp = Response(audio_bytes, mimetype="audio/mpeg")
+    resp.headers["X-Track-Title"] = title.encode("ascii", "ignore").decode()
+    resp.headers["X-Track-Artist"] = (artist or "").encode("ascii", "ignore").decode()
+    resp.headers["Access-Control-Expose-Headers"] = "X-Track-Title, X-Track-Artist"
+    return resp
 
 
 if __name__ == "__main__":
