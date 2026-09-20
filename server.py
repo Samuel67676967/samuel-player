@@ -39,7 +39,7 @@ def search():
     for entry in info.get("entries", []):
         if not entry:
             continue
-        track_url = entry.get("url") or entry.get("webpage_url")
+        track_url = entry.get("webpage_url") or entry.get("url")
         if not track_url:
             continue
         results.append({
