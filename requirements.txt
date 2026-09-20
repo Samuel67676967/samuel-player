@@ -1,4 +1,5 @@
 flask==3.0.3
 flask-cors==4.0.1
-yt-dlp==2024.8.6
+yt-dlp==2026.8.19
 gunicorn==22.0.0
+ 
