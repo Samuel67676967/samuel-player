@@ -6,6 +6,9 @@ import yt_dlp
 app = Flask(__name__)
 CORS(app)  # allow the PWA (hosted on a different origin) to call this API
 
+COOKIE_FILE = os.path.join(os.path.dirname(__file__), "cookies.txt")
+_cookie_opts = {"cookiefile": COOKIE_FILE} if os.path.exists(COOKIE_FILE) else {}
+
 YDL_SEARCH_OPTS = {
     "quiet": True,
     "no_warnings": True,
@@ -13,6 +16,7 @@ YDL_SEARCH_OPTS = {
     "skip_download": True,
     "default_search": "ytsearch",
     "extractor_args": {"youtube": {"player_client": ["android"]}},
+    **_cookie_opts,
 }
 
 YDL_STREAM_OPTS = {
@@ -22,6 +26,7 @@ YDL_STREAM_OPTS = {
     "skip_download": True,
     "noplaylist": True,
     "extractor_args": {"youtube": {"player_client": ["android"]}},
+    **_cookie_opts,
 }
 
 
