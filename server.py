@@ -4,12 +4,9 @@ import glob
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import yt_dlp
-import imageio_ffmpeg
 
 app = Flask(__name__)
 CORS(app)  # allow the PWA (hosted on a different origin) to call this API
-
-FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 
 YDL_SEARCH_OPTS = {
     "quiet": True,
@@ -88,18 +85,13 @@ def stream(track_url):
 @app.get("/download/<path:track_url>")
 def download(track_url):
     with tempfile.TemporaryDirectory() as tmpdir:
-        out_template = os.path.join(tmpdir, "%(id)s.%(ext)s")
+        out_template = os.path.join(tmpdir, "track.%(ext)s")
         opts = {
             "quiet": True,
             "no_warnings": True,
-            "format": "bestaudio/best",
+            "format": "bestaudio[ext=mp3]/bestaudio[ext=m4a]/bestaudio/best",
             "outtmpl": out_template,
-            "ffmpeg_location": FFMPEG_PATH,
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            }],
+            "noplaylist": True,
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(track_url, download=True)
@@ -107,14 +99,20 @@ def download(track_url):
         title = info.get("title", "track")
         artist = info.get("uploader", "")
 
-        mp3_files = glob.glob(os.path.join(tmpdir, "*.mp3"))
-        if not mp3_files:
-            return jsonify({"error": "conversion failed"}), 500
+        downloaded = glob.glob(os.path.join(tmpdir, "track.*"))
+        if not downloaded:
+            return jsonify({"error": "download failed"}), 500
 
-        with open(mp3_files[0], "rb") as f:
+        filepath = downloaded[0]
+        ext = filepath.rsplit(".", 1)[-1].lower()
+        mimetypes = {"mp3": "audio/mpeg", "m4a": "audio/mp4", "aac": "audio/aac",
+                     "opus": "audio/opus", "ogg": "audio/ogg", "webm": "audio/webm"}
+        mimetype = mimetypes.get(ext, "application/octet-stream")
+
+        with open(filepath, "rb") as f:
             audio_bytes = f.read()
 
-    resp = Response(audio_bytes, mimetype="audio/mpeg")
+    resp = Response(audio_bytes, mimetype=mimetype)
     resp.headers["X-Track-Title"] = title.encode("ascii", "ignore").decode()
     resp.headers["X-Track-Artist"] = (artist or "").encode("ascii", "ignore").decode()
     resp.headers["Access-Control-Expose-Headers"] = "X-Track-Title, X-Track-Artist"
